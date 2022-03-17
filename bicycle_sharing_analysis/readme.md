@@ -27,4 +27,5 @@ This project analyzes the encoded customer data from Mobike and Didi. The raw cs
 
 <img src="./figures/heatmap_end.png" width="800">
 
+### **Note**
 The 2D histplots of each journey location frequencies are plotted using professional graphical visualization tool called **folium**. Check the `output` folder to see the html heatmap in details.
