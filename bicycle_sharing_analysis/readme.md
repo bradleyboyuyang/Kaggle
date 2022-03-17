@@ -1,7 +1,7 @@
 # Bicycle Sharing Data Analysis
 This project analyzes the encoded customer data from Mobike and Didi. The raw csv file in the `raw_data` folder are too large to be uploaded (>80MB).
 
-### **Results overview**
+### **Results Overview**
 
 - Daily order histogram:
 
