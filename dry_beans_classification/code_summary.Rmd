@@ -1,0 +1,1276 @@
+---
+title: 'ERG2050 Project'
+author: "Yang Boyu (119020065)"
+date: "2021/11/13"
+output:
+  pdf_document:
+    latex_engine: xelatex
+  word_document: default
+  html_document:
+    df_print: paged
+classoption: hyperref,
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning=F,fig.align = "center")
+```
+
+```{r}
+library(knitr)
+library(kableExtra)
+library(ggplot2)
+library(caret)
+library(lattice)
+library(e1071)
+library(pROC)
+library(nnet)
+library(boot)
+library(reshape2)
+library(plotly)
+library(WVPlots)
+library(rpart)
+library(tree)
+library(randomForest)
+```
+
+```{r}
+setwd("D:\\ERG2050\\group_project")
+getwd()
+```
+
+```{r}
+data = read.csv("Dry_Bean_Dataset.csv")
+sum(is.na(data))
+```
+
+```{r}
+contrasts(as.factor(Class))
+```
+
+```{r}
+set.seed(1)
+index = createDataPartition(data$Class, p=0.75, list=FALSE)
+data_trn = data[index, ]
+data_tst = data[-index, ]
+class_trn = data$Class[index]
+class_tst = data$Class[-index]
+```
+
+```{r}
+cor(data_trn[,-ncol(data_trn)])
+```
+
+```{r}
+write.csv(cor(data_trn[,-ncol(data_trn)]),file="./output/correlation.csv")
+```
+
+```{r}
+colnames(cor(data[,-ncol(data)]))
+```
+
+```{r}
+png("./figures/heatmap.png", width=500, height=500, bg="white", res=120)
+heatmap(cor(data_trn[,-ncol(data_trn)]))
+dev.off()
+```
+
+```{r}
+library(ggplot2)
+df_cor = round(cor(scale(data_trn[,-ncol(data_trn)])),2)
+dd <- as.dist((1 - df_cor)/2)
+hc <- hclust(dd)
+df_cor <- df_cor[hc$order, hc$order]
+df_cor[upper.tri(df_cor)] <- NA
+
+ heatmap_1 = df_cor %>% 
+    melt(na.rm = TRUE) %>%
+    ggplot(aes(x=Var1, y = Var2, fill = value)) + 
+    geom_tile() + 
+    scale_fill_gradient2(low = "blue", high = "red", mid = "white", midpoint = 0, limit = c(-1,1), space = "Lab", name="Pearson\nCorrelation") + coord_fixed()+theme(axis.text.x=element_text(angle=-90, size=8), axis.text.y=element_text(size=8))
+ 
+ heatmap_1 +
+    geom_text(aes(Var1, Var2, label = value), color = "black", size = 2)
+```
+
+```{r}
+png("./figures/heatmap2.png", width=600, height=600, bg="white", res=150)
+heatmap_1+
+      geom_text(aes(Var1, Var2, label = value), color = "black", size = 1.8)  + 
+    theme(
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.border = element_blank(),
+        panel.background = element_blank(),
+        axis.ticks = element_blank(),
+        legend.justification = c(1, 0),
+        legend.position = c(0.6, 0.7),
+        legend.direction = "horizontal"
+    ) +
+    guides(fill = guide_colorbar(barwidth = 7, barheight = 1, title.position = "top", title.hjust = 0.5))
+dev.off()
+```
+
+```{r}
+head(data_trn)
+```
+
+```{r}
+colnames(data_trn)
+```
+
+Feature selection
+
+```{r}
+train = data_trn[,c("MajorAxisLength", "MinorAxisLength", "AspectRation", "Extent","Solidity", "roundness","ShapeFactor2", "ShapeFactor4","Class")]
+test = data_tst[,c("MajorAxisLength", "MinorAxisLength", "AspectRation", "Extent","Solidity", "roundness","ShapeFactor2", "ShapeFactor4","Class")]
+```
+
+```{r}
+write.csv(train,file="./processed_data/train.csv",row.names = F)
+write.csv(test,file="./processed_data/test.csv", row.names = F)
+```
+
+```{r}
+library(ggplot2)
+df_cor = round(cor(scale(train[,-ncol(train)])),2)
+dd <- as.dist((1 - df_cor)/2)
+hc <- hclust(dd)
+df_cor <- df_cor[hc$order, hc$order]
+df_cor[upper.tri(df_cor)] <- NA
+
+ heatmap_1 = df_cor %>% 
+    melt(na.rm = TRUE) %>%
+    ggplot(aes(x=Var1, y = Var2, fill = value)) + 
+    geom_tile() + 
+    scale_fill_gradient2(low = "blue", high = "red", mid = "white", midpoint = 0, limit = c(-1,1), space = "Lab", name="Pearson\nCorrelation") + coord_fixed()+theme(axis.text.x=element_text(angle=-90, size=8), axis.text.y=element_text(size=8))
+ 
+ heatmap_1 +
+    geom_text(aes(Var1, Var2, label = value), color = "black", size = 2)
+```
+
+```{r}
+png("./figures/heatmap_new.png", width=600, height=600, bg="white", res=150)
+heatmap_1+
+      geom_text(aes(Var1, Var2, label = value), color = "black", size = 1.8)  + 
+    theme(
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.border = element_blank(),
+        panel.background = element_blank(),
+        axis.ticks = element_blank(),
+        legend.justification = c(1, 0),
+        legend.position = c(0.6, 0.7),
+        legend.direction = "horizontal"
+    ) +
+    guides(fill = guide_colorbar(barwidth = 7, barheight = 1, title.position = "top", title.hjust = 0.5))
+dev.off()
+```
+
+## Pairplot
+
+```{r}
+# colnames(train) = c("Maj", "Min", "Asp", "Ext", "Sol", "round", "fac2", "fac4", "Class")
+# colnames(test) = c("Maj", "Min", "Asp", "Ext", "Sol", "round", "fac2", "fac4", "Class")
+```
+
+```{r}
+attach(train)
+summary(train)
+```
+
+```{r}
+library(plotly)
+set.seed(1)
+png("./figures/box_ShapeFactor4.png", width=800, height=800, bg="white", res=180)
+# This is how it needs to be done in ggplot
+# p <- ggplot(train[,-9], aes(Class, Extent, fill = Class)) +
+#   stat_boxplot(geom ='errorbar') + 
+#   geom_boxplot()+
+#   ggtitle("Add horizontal lines to whiskers using ggplot2")
+
+# Note that plotly will automatically add horozontal lines to the whiskers
+p <- ggplot(train[,-9], aes(Class, ShapeFactor4, fill = Class)) +
+  geom_boxplot()+
+  ggtitle("Feature ShapeFactor4 Box Plot")+theme(axis.text.x=element_text(angle=90, size=8))
+ggplotly(p)
+p
+dev.off()
+```
+
+```{r}
+colnames(train)
+attach(train)
+```
+
+```{r}
+library(plotly)
+library(ggplot2)
+
+png("./figures/violin_Solidity.png", width=800, height=800, bg="white", res=180)
+p <- ggplot(train,aes(x=factor(Class), y=Solidity, fill=Class)) +
+  geom_violin(colour=NA) +
+  geom_hline(yintercept=0, alpha=0.5) +
+  facet_grid() +
+  labs(title = "Feature Solidity Voilin Plot",
+       x = "Classes",
+       y = "Solidity") +
+  theme(axis.text.x = element_text(angle = -45),
+        plot.title = element_text(hjust = 0.5),
+        strip.background = element_rect(fill="lightblue"),
+        text = element_text(family = 'Fira Sans'),
+        legend.position = "none")
+
+ggplotly(p)
+p
+dev.off()
+```
+
+```{r}
+colnames(train)
+attach(train)
+```
+
+```{r}
+length(Class)
+```
+
+## Logistic
+
+```{r}
+library(arm)
+log_fit=train(form=Class~.,data=train,trControl=trainControl(method="cv", number=10), method="multinom"
+,verbose=F, metric="Accuracy") 
+log_fit
+```
+
+```{r}
+log_fit$results
+```
+
+```{r}
+mult.model = multinom(Class~., data=data_trn)
+sink("./output/logistic.csv")
+summary(mult.model)
+sink(NULL)
+```
+
+```{r}
+library(broom)
+write.csv(log_fit$results,file="./output/logistic.csv")
+```
+
+```{r}
+sink("./output/logistic_result.csv")
+pred.logistic = predict(log_fit, newdata=train)
+confusion_logistic = confusionMatrix(factor(pred.logistic), factor(Class))
+confusion_logistic
+sink(NULL)
+```
+
+```{r}
+png("./figures/logisitic.png", width=800, height=800, bg="white", res=180)
+df_cor = table(pred.logistic, Class)
+dd <- as.dist((1 - df_cor)/2)
+hc <- hclust(dd)
+df_cor <- df_cor[hc$order, hc$order]
+
+ heatmap_1 = df_cor %>% 
+    melt(na.rm = TRUE) %>%
+    ggplot(aes(x = pred.logistic, y = Class, fill = value)) + 
+    geom_tile() + 
+    scale_fill_gradient2(low = "blue", high = "brown", mid = "grey", midpoint = 0,limit = c(0,2500), space = "Lab", name="Logistic") + coord_fixed()+theme(axis.text.x=element_text(angle=-90, size=8), axis.text.y=element_text(size=8))
+ 
+ heatmap_1 +
+    geom_text(aes(pred.logistic, Class, label = value), color = "white", size = 2)
+ 
+ dev.off()
+```
+
+## naive bayes
+
+```{r}
+set.seed(1)
+nb_fit=train(form=Class~.,data=train,trControl=trainControl(method="cv", number=10), method="nb")
+nb_fit
+```
+
+```{r}
+nb_fit$results
+```
+
+```{r}
+nb_fit$bestTune
+```
+
+```{r}
+nb.class = predict(nb_fit, newdata=train)
+confusionMatrix(nb.class, factor(train$Class))
+```
+
+```{r}
+png("./figures/naive_bayes.png", width=800, height=800, bg="white", res=180)
+df_cor = table(nb.class, Class)
+dd <- as.dist((1 - df_cor)/2)
+hc <- hclust(dd)
+df_cor <- df_cor[hc$order, hc$order]
+
+ heatmap_1 = df_cor %>% 
+    melt(na.rm = TRUE) %>%
+    ggplot(aes(x = nb.class, y = Class, fill = value)) + 
+    geom_tile() + 
+    scale_fill_gradient2(low = "blue", high = "brown", mid = "grey", midpoint = 0,limit = c(0,2500), space = "Lab", name="Naive Bayes") + coord_fixed()+theme(axis.text.x=element_text(angle=-90, size=8), axis.text.y=element_text(size=8))
+ 
+ heatmap_1 +
+    geom_text(aes(nb.class, Class, label = value), color = "white", size = 2)
+ 
+ dev.off()
+```
+
+```{r}
+png("./figures/naive_bayes.png", width=600, height=600, bg="white", res=120)
+df_cor = table(nb.class, Class)
+dd <- as.dist((1 - df_cor)/2)
+hc <- hclust(dd)
+df_cor <- df_cor[hc$order, hc$order]
+
+ heatmap_1 = df_cor %>% 
+    melt(na.rm = TRUE) %>%
+    ggplot(aes(x = nb.class, y = Class, fill = value)) + 
+    geom_tile() + 
+    scale_fill_gradient2(low = "white", high = "#710900", mid = "grey", midpoint = 100,limit = c(0,2500), space = "Lab", name="Naive Bayes") + coord_fixed()+theme(axis.text.x=element_text(angle=-90, size=8), axis.text.y=element_text(size=8))
+ 
+ heatmap_1 +
+    geom_text(aes(nb.class, Class, label = value), color = "white", size = 2)
+ 
+ dev.off()
+```
+
+```{r}
+sink("./output/naive_Bayes_result.csv")
+confusion_logistic = confusionMatrix(nb.class, factor(train$Class))
+confusion_logistic
+sink(NULL)
+
+```
+
+## KNN
+
+```{r}
+library(class)
+set.seed(1)
+fit.knn <- train(Class ~ .,
+             method     = "knn",
+             tuneGrid   = expand.grid(k = 1:20),
+             trControl  = trainControl(method  = "cv", number  = 10),
+             metric     = "Accuracy",
+             preProcess = c("center","scale"),
+             data       = train)
+fit.knn
+```
+
+```{r}
+fit.knn$results
+```
+
+```{r}
+png("./figures/KNN5.png", width=800, height=600, bg="white", res=150)
+# trellis.par.set(caretTheme())
+# plot(fit.knn, col="blue")
+trellis.par.set(caretTheme())
+mAccuracy <- max(fit.knn$results$Accuracy)
+# mk <- fit.knn$results$k[fit.knn$results$Accuracy==mAccuracy]
+# points(mk,mAccuracy,col="blue",pch=19)
+plot(fit.knn, metric = "Accuracy", plotType = "line",col="blue", lwd=1.5, pct=19, type="o")
+dev.off()
+```
+
+```{r}
+sink("./output/KNN_result1.csv")
+confusion_logistic = fit.knn
+confusion_logistic
+sink(NULL)
+```
+
+```{r}
+knn.pred = predict(fit.knn, newdata=train)
+confusionMatrix(knn.pred, factor(train$Class))
+```
+
+```{r}
+sink("./output/KNN_result2.csv")
+confusion_logistic = confusionMatrix(knn.pred, factor(train$Class))
+confusion_logistic
+sink(NULL)
+```
+
+```{r}
+png("./figures/KNN.png", width=800, height=800, bg="white", res=180)
+df_cor = table(knn.pred, Class)
+dd <- as.dist((1 - df_cor)/2)
+hc <- hclust(dd)
+df_cor <- df_cor[hc$order, hc$order]
+
+ heatmap_1 = df_cor %>% 
+    melt(na.rm = TRUE) %>%
+    ggplot(aes(x = knn.pred, y = Class, fill = value)) + 
+    geom_tile() + 
+    scale_fill_gradient2(low = "blue", high = "brown", mid = "grey", midpoint = 0,limit = c(0,2500), space = "Lab", name="KNN") + coord_fixed()+theme(axis.text.x=element_text(angle=-90, size=8), axis.text.y=element_text(size=8))
+ 
+ heatmap_1 +
+    geom_text(aes(knn.pred, Class, label = value), color = "white", size = 2)
+ 
+ dev.off()
+```
+
+```{r}
+# png("./figures/KNN1.png", width=800, height=600, bg="white", res=150)
+plot(fit.knn$results$k,fit.knn$results$Accuracy,col = "brown", type="o",pch=18,ylim = c(0.88,0.94),xlab="k",ylab="Accuracy")
+h <- fit.knn$results$Accuracy+fit.knn$results$AccuracySD
+l <- fit.knn$results$Accuracy-fit.knn$results$AccuracySD
+
+mAccuracy <- max(fit.knn$results$Accuracy)
+mk <- fit.knn$results$k[fit.knn$results$Accuracy==mAccuracy]
+points(mk,mAccuracy,col="blue",pch=19)
+title("10-fold CV")
+# dev.off()
+```
+
+```{r}
+fit.knn$results
+```
+
+## LDA, QDA
+
+```{r}
+lda_fit=train(form=Class~.,data=train,trControl=trainControl(method="cv", number=10), method="lda")
+lda_fit
+```
+
+```{r}
+lda_fit$results
+```
+
+```{r}
+lda_pred = predict(lda_fit, newdata=train)
+confusionMatrix(lda_pred, factor(Class))
+```
+
+```{r}
+png("./figures/lda.png", width=800, height=800, bg="white", res=180)
+df_cor = table(lda_pred, Class)
+dd <- as.dist((1 - df_cor)/2)
+hc <- hclust(dd)
+df_cor <- df_cor[hc$order, hc$order]
+
+ heatmap_1 = df_cor %>% 
+    melt(na.rm = TRUE) %>%
+    ggplot(aes(x = lda_pred, y = Class, fill = value)) + 
+    geom_tile() + 
+    scale_fill_gradient2(low = "blue", high = "brown", mid = "grey", midpoint = 0,limit = c(0,2500), space = "Lab", name="LDA") + coord_fixed()+theme(axis.text.x=element_text(angle=-90, size=8), axis.text.y=element_text(size=8))
+ 
+ heatmap_1 +
+    geom_text(aes(lda_pred, Class, label = value), color = "white", size = 2)
+ 
+ dev.off()
+```
+
+```{r}
+sink("./output/lda_result.csv")
+a = confusionMatrix(lda_pred, factor(train$Class))
+a
+sink(NULL)
+```
+
+## QDA
+
+```{r}
+qda_fit=train(form=Class~.,data=train,trControl=trainControl(method="cv", number=10), method="qda"
+)
+qda_pred = predict(qda_fit, newdata=train)
+confusionMatrix(qda_pred, factor(Class))
+```
+
+```{r}
+qda_fit$results
+```
+
+```{r}
+png("./figures/qda.png", width=800, height=800, bg="white", res=180)
+df_cor = table(qda_pred, Class)
+dd <- as.dist((1 - df_cor)/2)
+hc <- hclust(dd)
+df_cor <- df_cor[hc$order, hc$order]
+
+ heatmap_1 = df_cor %>% 
+    melt(na.rm = TRUE) %>%
+    ggplot(aes(x = qda_pred, y = Class, fill = value)) + 
+    geom_tile() + 
+    scale_fill_gradient2(low = "blue", high = "brown", mid = "grey", midpoint = 0,limit = c(0,2500), space = "Lab", name="QDA") + coord_fixed()+theme(axis.text.x=element_text(angle=-90, size=8), axis.text.y=element_text(size=8))
+ 
+ heatmap_1 +
+    geom_text(aes(qda_pred, Class, label = value), color = "white", size = 2)
+ 
+ dev.off()
+```
+
+```{r}
+sink("./output/qda_result.csv")
+confusion_logistic = confusionMatrix(qda_pred, factor(train$Class))
+confusion_logistic
+sink(NULL)
+```
+
+## RDA
+
+```{r}
+rda_fit=train(form=Class~.,data=train,trControl=trainControl(method="cv", number=10), method="rda"
+)
+```
+
+```{r}
+rda_fit
+```
+
+```{r}
+rda_pred = predict(rda_fit, newdata=train)
+confusionMatrix(rda_pred, factor(Class))
+```
+
+```{r}
+rda_fit$results
+```
+
+```{r}
+nb_fit$results
+```
+
+```{r}
+library(plotly)
+library(tidymodels)
+library(fastDummies)
+
+# Artificially add noise to make task harder
+data(iris)
+ind <- sample.int(150, 50)
+samples <- sample(x = iris$Species, size = 50)
+iris[ind,'Species'] = samples
+
+# Define the inputs and outputs
+X <- subset(iris, select = -c(Species))
+iris$Species <- as.factor(iris$Species)
+
+# Fit the model
+logistic <-
+  multinom_reg() %>%
+  set_engine("nnet") %>%
+  set_mode("classification") %>%
+  fit(Classes ~ ., data = train)
+
+y_scores <- logistic %>%
+  predict(X, type = 'prob')
+
+# One hot encode the labels in order to plot them
+y_onehot <- dummy_cols(iris$Species)
+colnames(y_onehot) <- c('drop', 'setosa', 'versicolor', 'virginica')
+y_onehot <- subset(y_onehot, select = -c(drop))
+
+z = cbind(y_scores, y_onehot)
+
+z$setosa <- as.factor(z$setosa)
+roc_setosa <- roc_curve(data = z, setosa, .pred_setosa)
+roc_setosa$specificity <- 1 - roc_setosa$specificity
+colnames(roc_setosa) <- c('threshold', 'tpr', 'fpr')
+auc_setosa <- roc_auc(data = z, setosa, .pred_setosa)
+auc_setosa <- auc_setosa$.estimate
+setosa <- paste('setosa (AUC=',toString(round(1-auc_setosa,2)),')',sep = '')
+
+z$versicolor <- as.factor(z$versicolor)
+roc_versicolor <- roc_curve(data = z, versicolor, .pred_versicolor)
+roc_versicolor$specificity <- 1 - roc_versicolor$specificity
+colnames(roc_versicolor) <- c('threshold', 'tpr', 'fpr')
+auc_versicolor <- roc_auc(data = z, versicolor, .pred_versicolor)
+auc_versicolor <- auc_versicolor$.estimate
+versicolor <- paste('versicolor (AUC=',toString(round(1-auc_versicolor,2)),')', sep = '')
+
+z$virginica <- as.factor(z$virginica)
+roc_virginica <- roc_curve(data = z, virginica, .pred_virginica)
+roc_virginica$specificity <- 1 - roc_virginica$specificity
+colnames(roc_virginica) <- c('threshold', 'tpr', 'fpr')
+auc_virginica <- roc_auc(data = z, virginica, .pred_virginica)
+auc_virginica <- auc_virginica$.estimate
+virginica <- paste('virginica (AUC=',toString(round(1-auc_virginica,2)),')',sep = '')
+
+# Create an empty figure, and iteratively add a line for each class
+fig <- plot_ly()%>%
+  add_segments(x = 0, xend = 1, y = 0, yend = 1, line = list(dash = "dash", color = 'black'), showlegend = FALSE) %>%
+  add_trace(data = roc_setosa,x = ~fpr, y = ~tpr, mode = 'lines', name = setosa, type = 'scatter')%>%
+  add_trace(data = roc_versicolor,x = ~fpr, y = ~tpr, mode = 'lines', name = versicolor, type = 'scatter')%>%
+  add_trace(data = roc_virginica,x = ~fpr, y = ~tpr, mode = 'lines', name = virginica, type = 'scatter')%>%
+  layout(xaxis = list(
+    title = "False Positive Rate"
+  ), yaxis = list(
+    title = "True Positive Rate"
+  ),legend = list(x = 100, y = 0.5))
+fig
+```
+
+## Tree
+
+### Classification tree
+
+```{r}
+tree1 = tree(factor(Class)~., data=train)
+summary(tree1)
+```
+
+```{r}
+png("./figures/tree_structure.png", width=800, height=600, bg="white", res=120)
+plot(tree1)
+text(tree1, cex=0.6, font=2, pretty=0)
+dev.off()
+```
+
+```{r}
+tree1.pred = predict(tree1, newdata=train, type="class")
+confusionMatrix(tree1.pred, factor(Class))
+```
+
+```{r}
+set.seed(1)
+cv.tree1 = cv.tree(tree1, FUN=prune.misclass)
+cv.tree1
+```
+
+```{r}
+prune.tree1 = prune.misclass(tree1, best=9)
+tree.pred = predict(prune.tree1, newdata=train, type="class")
+confusionMatrix(tree.pred, factor(Class))
+```
+
+```{r}
+png("./figures/pruned_tree_structure.png", width=800, height=600, bg="white", res=120)
+plot(prune.tree1)
+text(prune.tree1, cex=0.6, font=2, pretty=0)
+dev.off()
+```
+
+```{r}
+png("./figures/cv.tree.png", width=800, height=600, bg="white", res=120)
+plot(cv.tree1$size, cv.tree1$dev,type="b", col="brown",lwd=2)
+dev.off()
+```
+
+```{r}
+summary(prune.tree1)
+```
+
+```{r}
+png("./figures/class_tree1.png", width=800, height=800, bg="white", res=180)
+df_cor = table(tree.pred, Class)
+dd <- as.dist((1 - df_cor)/2)
+hc <- hclust(dd)
+df_cor <- df_cor[hc$order, hc$order]
+
+ heatmap_1 = df_cor %>% 
+    melt(na.rm = TRUE) %>%
+    ggplot(aes(x = tree.pred, y = Class, fill = value)) + 
+    geom_tile() + 
+    scale_fill_gradient2(low = "blue", high = "brown", mid = "grey", midpoint = 0,limit = c(0,2500), space = "Lab", name="Classification\nTree") + coord_fixed()+theme(axis.text.x=element_text(angle=-90, size=8), axis.text.y=element_text(size=8))
+ 
+ heatmap_1 +
+    geom_text(aes(tree.pred, Class, label = value), color = "white", size = 2)
+ 
+ dev.off()
+```
+
+#### Rpart
+
+```{r}
+library(rpart)
+set.seed(1)
+ct = rpart.control(xval=10, cp=0.01)
+rp_fit = rpart(factor(Class)~., train, method="class", control=ct)
+rp_fit
+```
+
+```{r}
+summary(rp_fit)
+```
+
+```{r}
+rp_prune=prune(rp_fit,cp=0.022455)
+par(mar=rep(0.2,4))
+plot(rp_prune,branch=0.2,uniform=TRUE,compress=TRUE,margin=0.1)
+text(rp_prune,use.n=TRUE,all=TRUE,cex=0.6,fancy=TRUE)
+```
+
+```{r}
+rp_fit$variable.importance
+```
+
+```{r}
+write.csv(rp_fit$variable.importance,file="./output/importance_measure.csv")
+knitr::kable(rp_fit$variable.importance)
+```
+
+```{r}
+png("./figures/tree_structure2.png", width=700, height=600, bg="white", res=120)
+plot(rp_fit)
+text(rp_fit, cex=0.5, font=4, use.n=T, all=T)
+dev.off()
+```
+
+```{r}
+png("./figures/pruned_tree_structure2.png", width=700, height=600, bg="white", res=120)
+plot(rp_prune)
+text(rp_prune, cex=0.5, font=4, use.n=T, all=T)
+dev.off()
+```
+
+```{r}
+library(rpart.plot)
+rpart.plot(rp_fit, branch=1, branch.type=2, type=1, extra=102,
+           shadow.col="grey", box.col="white",
+           border.col="black", split.col="brown",
+           split.cex=1.2);
+```
+
+```{r}
+png("./figures/tree_structure3.png", width=800, height=600, bg="white", res=200)
+library(rpart.plot)
+rpart.plot(rp_fit, branch=1, branch.type=2, type=1, extra=102,
+           shadow.col="grey", box.col="white",
+           border.col="black", split.col="brown",
+           split.cex=1.2);
+dev.off()
+```
+
+```{r}
+png("./figures/pruned_tree_structure3.png", width=800, height=600, bg="white", res=200)
+library(rpart.plot)
+rpart.plot(rp_prune, branch=1, branch.type=2, type=1, extra=102,
+           shadow.col="grey", box.col="white",
+           border.col="black", split.col="brown",
+           split.cex=1.2);
+dev.off()
+```
+
+```{r}
+rp.pred = predict(rp_prune, train, type='class')
+confusionMatrix(rp.pred, factor(Class))
+```
+
+### Random forest
+
+```{r}
+set.seed(1)
+trControl <- trainControl(method  = "cv", number  = 10)
+fit.rf <- train(factor(Class) ~ .,
+             method     = "rf",
+             tuneGrid   = expand.grid(mtry = 1:8),
+             trControl  = trControl,
+             metric     = "Accuracy",
+             # preProcess = c("center","scale"),
+             data       = train)
+```
+
+```{r}
+fit.rf
+```
+
+```{r}
+fit.rf$results
+```
+
+```{r}
+fit.rf$finalModel #这个model是ntree=500
+fit.rf$finalModel$importance #靠这个能画图
+```
+
+```{r}
+library(ggplot2)
+importance.rf <- as.data.frame(fit.rf$finalModel$importance)
+# plot(fit.rf$finalModel,main="Random Forest")
+varImpPlot((fit.rf$finalModel),bg="red",main="Variable Importance Plot for the data set")
+```
+
+```{r}
+plot(fit.rf,xlab="Numbers of n")
+plot(fit.rf$finalModel,lty=1)
+```
+
+#### Random forest 不能用predict指令计算confusion matrix, 只能用OOB error去估计一个test error。
+
+```{r}
+# bag.pred = predict(fit.rf, newdata=train)
+# confusionMatrix(bag.pred, factor(Class))
+# fit.rf
+```
+
+```{r}
+sink("./output/Random_forest_result.csv")
+confusion_logistic = fit.rf
+confusion_logistic
+sink(NULL)
+```
+
+#### bagging
+
+```{r}
+library(randomForest)
+set.seed(1)
+bag.fit = randomForest(factor(Class)~., data=train, mtry=8, importance=T, cv.folds=10)
+bag.fit
+```
+
+```{r}
+bag.fit$confusion
+```
+
+```{r}
+# bag.pred = predict(bag.fit, newdata=train)
+# confusionMatrix(bag.pred, factor(Class))
+```
+
+```{r}
+png("./figures/random_forest.png", width=800, height=800, bg="white", res=180)
+df_cor = table(bag.pred, Class)
+dd <- as.dist((1 - df_cor)/2)
+hc <- hclust(dd)
+df_cor <- df_cor[hc$order, hc$order]
+
+ heatmap_1 = df_cor %>% 
+    melt(na.rm = TRUE) %>%
+    ggplot(aes(x = bag.pred, y = Class, fill = value)) + 
+    geom_tile() + 
+    scale_fill_gradient2(low = "blue", high = "brown", mid = "grey", midpoint = 0,limit = c(0,2500), space = "Lab", name="Random\nForest") + coord_fixed()+theme(axis.text.x=element_text(angle=-90, size=8), axis.text.y=element_text(size=8))
+ 
+ heatmap_1 +
+    geom_text(aes(bag.pred, Class, label = value), color = "white", size = 2)
+ 
+ dev.off()
+```
+
+```{r}
+plot(bag.fit)
+```
+
+```{r}
+write.csv(importance(bag.fit),file="./output/importance_measure_by_RF.csv")
+```
+
+```{r}
+varImpPlot(bag.fit)
+```
+
+```{r}
+print(importance(bag.fit))
+```
+
+### Boosting
+
+```{r}
+set.seed(1)
+fitControl <- trainControl(## 10-fold CV
+                           method = "repeatedcv",
+                           number = 3,
+                           ## repeated ten times
+                           repeats = 1)
+
+gbmFit1 <- train(factor(Class) ~ ., data = train, 
+                 method = "gbm", 
+                 trControl = fitControl,
+                 ## This last option is actually one
+                 ## for gbm() that passes through
+                 verbose = FALSE)
+gbmFit1
+```
+
+```{r}
+fitControl <- trainControl(## 10-fold CV
+                           method = "repeatedcv",
+                           number = 3,
+                           ## repeated ten times
+                           repeats = 1)
+gbmGrid <-  expand.grid(interaction.depth = c(1, 2, 3), 
+                        n.trees = (1:30)*50, 
+                        shrinkage = 0.1,
+                        n.minobsinnode = 20)
+                        
+nrow(gbmGrid)
+
+set.seed(1)
+gbmFit2 <- train(factor(Class) ~ ., data = train, 
+                 method = "gbm", 
+                 trControl = fitControl, 
+                 verbose = FALSE, 
+                 ## Now specify the exact models 
+                 ## to evaluate:
+                 tuneGrid = gbmGrid)
+gbmFit2
+```
+
+```{r}
+gbmFit2$bestTune
+```
+
+```{r}
+gbmFit2$results
+```
+
+```{r}
+png("./figures/boosting1.png", width=800, height=600, bg="white", res=120)
+trellis.par.set(caretTheme())
+plot(gbmFit2)
+dev.off()
+```
+
+```{r}
+png("./figures/boosting2.png", width=800, height=600, bg="white", res=120)
+trellis.par.set(caretTheme())
+plot(gbmFit2, metric = "Kappa")
+dev.off()
+```
+
+```{r}
+png("./figures/boosting6.png", width=800, height=600, bg="white", res=120)
+trellis.par.set(caretTheme())
+plot(gbmFit2, metric = "Accuracy", plotType = "level",
+     scales = list(x = list(rot = 90)))
+dev.off()
+```
+
+```{r}
+# png("./figures/boosting3.png", width=900, height=500, bg="white", res=120)
+ggplot(gbmFit2)
+# dev.off()
+```
+
+```{r}
+# fitControl <- trainControl(method = "cv",
+#                            number = 10,
+#                            ## Estimate class probabilities
+#                            classProbs = TRUE,
+#                            ## Evaluate performance using 
+#                            ## the following function
+#                            summaryFunction = twoClassSummary)
+# 
+# set.seed(1)
+# gbmFit3 <- train(factor(Class) ~ ., data = training, 
+#                  method = "gbm", 
+#                  trControl = fitControl, 
+#                  verbose = FALSE, 
+#                  tuneGrid = gbmGrid,
+#                  ## Specify which metric to optimize
+#                  metric = "ROC")
+# gbmFit3
+```
+
+```{r}
+sink("./output/boosting_result.csv")
+confusion_logistic = gbmFit2
+confusion_logistic
+sink(NULL)
+```
+
+```{r}
+gbmFit2$results
+```
+
+```{r}
+gbmFit2$coefnames
+```
+
+```{r}
+boosting.fit = predict(gbmFit2, newdata=train)
+confusionMatrix(boosting.fit, factor(train$Class))
+```
+
+```{r}
+png("./figures/boosting.png", width=800, height=800, bg="white", res=180)
+df_cor = table(boosting.fit, Class)
+dd <- as.dist((1 - df_cor)/2)
+hc <- hclust(dd)
+df_cor <- df_cor[hc$order, hc$order]
+
+ heatmap_1 = df_cor %>% 
+    melt(na.rm = TRUE) %>%
+    ggplot(aes(x = boosting.fit, y = Class, fill = value)) + 
+    geom_tile() + 
+    scale_fill_gradient2(low = "blue", high = "brown", mid = "grey", midpoint = 0,limit = c(0,2500), space = "Lab", name="Boosting") + coord_fixed()+theme(axis.text.x=element_text(angle=-90, size=8), axis.text.y=element_text(size=8))
+ 
+ heatmap_1 +
+    geom_text(aes(boosting.fit, Class, label = value), color = "white", size = 2)
+ 
+ dev.off()
+```
+
+```{r}
+gbmFit2$modelInfo
+```
+
+## SVM
+
+### Scaling
+
+```{r}
+x = scale(train[,-ncol(train)], center=T, scale=T)
+dat = data.frame(x=x, y=as.factor(Class))
+svmfit1 = svm(y~., data=dat, kernel="poly", cost=10, degree=2, scale=T)
+summary(svmfit1)
+```
+
+```{r}
+confusionMatrix(svmfit1$fitted, factor(Class))
+```
+
+```{r}
+pred.svm = predict(svmfit1, newdata=dat)
+confusionMatrix(pred.svm, factor(Class))
+```
+
+### Linear
+
+```{r}
+set.seed(1)
+tune.out = tune(svm, y~., data=dat, kernel="linear", ranges=list(cost=c(5,8,10,12,20,50)))
+tune.out
+```
+
+```{r}
+tune.out$best.parameters
+```
+
+```{r}
+tune.out$performances
+```
+
+```{r}
+tune.out
+```
+
+### Radial
+
+```{r}
+set.seed(1)
+tune.out.radial = tune(svm, y~., data=dat, kernel="radial", ranges=list(cost=6.1, gamma=0.2), scale=T)
+tune.out.radial
+```
+
+```{r}
+tune.out.radial$performances
+```
+
+```{r}
+tune.out.performances
+```
+
+### Polynomial
+
+```{r}
+set.seed(1)
+tune.out.poly = tune(svm, y~., data=dat, kernel="radial", ranges=list(cost=300, degree=3),scale=T)
+tune.out.poly
+```
+
+```{r}
+tune.out.poly$performances
+```
+
+```{r}
+set.seed(1)
+tune.out=tune(svm, y~., data = dat, kernel = 'polynomial', degree=3,ranges = list(cost = c(0.01, 0.1, 1, 5, 10,100)))
+summary(tune.out)
+```
+
+```{r}
+svmfit1 = svm(y~., data=dat, kernel="poly", cost=300, degree=3, scale=T)
+# svmfit1
+pred.svm3 = predict(svmfit1, newdata=dat)
+confusionMatrix(pred.svm3, factor(Class))
+```
+
+```{r}
+best_svm1 = tune.out$best.model
+summary(best_svm1)
+```
+
+```{r}
+confusionMatrix(best_svm1$fitted, factor(Class))
+```
+
+```{r}
+set.seed(1)
+tune.out2=tune(svm, y~., data=dat, kernel ="poly",ranges =list(cost=seq(), degree=seq(2,8,1)))
+summary(tune.out2)
+```
+
+```{r}
+best_svm2 = tune.out2$best.model
+summary(best_svm2)
+```
+
+```{r}
+confusionMatrix(best_svm2$fitted, factor(Class))
+```
+
+```{r}
+tail(tune.out2$performances,5)
+```
+
+```{r}
+tune.out2$performances$error
+```
+
+```{r}
+library(e1071)
+library(ggplot2)
+library(RColorBrewer)
+set.seed(1)
+tune.out3=tune(svm, y~., data=dat, kernel ="poly",ranges =list(cost=seq(100,600,100),degree=seq(2,7,1)))
+summary(tune.out3)
+```
+
+```{r}
+tune.out3$best.parameters
+```
+
+```{r}
+tune.out3$best.performance
+```
+
+```{r}
+best_svm3 = tune.out3$best.model
+summary(best_svm3)
+```
+
+```{r}
+tune.out3$performances
+```
+
+```{r}
+confusionMatrix(best_svm3$fitted, factor(Class))
+```
+
+```{r}
+pred.svm3 = predict(best_svm3, newdata=dat)
+confusionMatrix(pred.svm3, factor(Class))
+```
+
+```{r}
+png("./figures/svm_polynomial.png", width=800, height=800, bg="white", res=180)
+df_cor = table(pred.svm3, Class)
+dd <- as.dist((1 - df_cor)/2)
+hc <- hclust(dd)
+df_cor <- df_cor[hc$order, hc$order]
+
+ heatmap_1 = df_cor %>% 
+    melt(na.rm = TRUE) %>%
+    ggplot(aes(x = pred.svm3, y = Class, fill = value)) + 
+    geom_tile() + 
+    scale_fill_gradient2(low = "blue", high = "brown", mid = "grey", midpoint = 0,limit = c(0,2500), space = "Lab", name="SVM_Polynomial\ndegree=3\ncost=300") + coord_fixed()+theme(axis.text.x=element_text(angle=-90, size=8), axis.text.y=element_text(size=8))
+ 
+ heatmap_1 +
+    geom_text(aes(pred.svm3, Class, label = value), color = "white", size = 2)
+ 
+ dev.off()
+```
+
+```{r}
+png("./figures/SVM_polynomial_heatmap.png", width=800, height=600, bg="white", res=120)
+plotdata = tune.out3$performances
+# head(plotdata)
+ggplot(plotdata,aes(x = cost, y = degree, fill=error))+ geom_tile(aes(fill = error))+ scale_fill_gradientn(colours=brewer.pal(10,"OrRd"))+ ggtitle("Polynomial Kernel SVM: Misclassification Error Rate")
+dev.off()
+```
+
+```{r}
+sink("./output/SVM_poly_result.csv")
+confusion_logistic = confusionMatrix(best_svm3$fitted, factor(Class))
+confusion_logistic
+sink(NULL)
+```
+
+### Radial
+
+```{r}
+library(caret)
+fitControl <- trainControl(## 10-fold CV
+                           method = "repeatedcv",
+                           number = 3,
+                           ## repeated ten times
+                           repeats = 1)
+svmGrid <-  expand.grid(C = seq(100,900,100), 
+                        degree = seq(2,10,1), 
+                        scale = T)
+                        
+
+set.seed(1)
+svmfit <- train(factor(Class) ~ ., data = train, 
+                 method = "svmPoly", 
+                 trControl = fitControl, 
+                 verbose = FALSE, 
+                 ## Now specify the exact models 
+                 ## to evaluate:
+                 tuneGrid = svmGrid)
+svmfit
+```
+
+```{r}
+svmfit$results
+```
+
+```{r}
+plot(svmfit)
+```
+
+### Linear
+
+```{r}
+
+```
+
+## Last stage - test error
+
+#### best model: best_svm3
+
+```{r}
+x = scale(test[,-ncol(test)], center=T, scale=T)
+dat_test = data.frame(x=x, y=as.factor(test$Class))
+pred.svm3 = predict(best_svm3, newdata=dat_test)
+confusionMatrix(pred.svm3, factor(test$Class))
+```
+
+```{r}
+test_class = test$Class
+png("./figures/svm_test_result.png", width=800, height=800, bg="white", res=150)
+df_cor = table(pred.svm3, test_class)
+dd <- as.dist((1 - df_cor)/2)
+hc <- hclust(dd)
+df_cor <- df_cor[hc$order, hc$order]
+
+
+ heatmap_1 = df_cor %>% 
+    melt(na.rm = TRUE) %>%
+    ggplot(aes(x = pred.svm3, y = test_class, fill = value)) + 
+    geom_tile() + 
+    scale_fill_gradient2(low = "#D3F377", high = "#1B4311", mid = "#D3F377", midpoint = 0,limit = c(0,810), space = "Lab", name="Test Error") + coord_fixed()+theme(axis.text.x=element_text(angle=-90, size=8), axis.text.y=element_text(size=8))
+ 
+ heatmap_1 +
+    geom_text(aes(pred.svm3, test_class, label = value), color = "black", size = 4)
+ 
+ dev.off()
+```
+
+```{r}
+sink("./output/Test_result.csv")
+confusion_logistic = confusionMatrix(pred.svm3, factor(test$Class))
+confusion_logistic
+sink(NULL)
+```
+
+```{r}
+seq(1,600,100)
+```
